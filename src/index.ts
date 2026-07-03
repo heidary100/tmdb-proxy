@@ -4,6 +4,7 @@ import { cors } from 'hono/cors'
 type Bindings = {
   TMDB_API_KEY: string
   TMDB_API_BASE_URL: string
+  PROXY_SECRET: string
 }
 
 const CACHE_TTL = 60 * 60 // 1 hour
@@ -25,6 +26,14 @@ function isCacheable(method: string, status: number): boolean {
 const app = new Hono<{ Bindings: Bindings }>()
 
 app.use('*', cors())
+
+app.use('/3/*', async (c, next) => {
+  const secret = c.req.header('X-Proxy-Secret')
+  if (!secret || secret !== c.env.PROXY_SECRET) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+  await next()
+})
 
 app.get('/health', (c) => c.json({ status: 'ok' }))
 
