@@ -1,0 +1,11 @@
+{
+  "name": "tmdb-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-03",
+  "vars": {
+    "TMDB_API_BASE_URL": "https://api.themoviedb.org/3"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
