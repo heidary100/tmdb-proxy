@@ -1,31 +1,30 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { secureHeaders } from 'hono/secure-headers'
 
 type Bindings = {
-  TMDB_API_BEARER_TOKEN: string
+  TMDB_API_KEY: string
   TMDB_API_BASE_URL: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
 
 app.use('*', cors())
-app.use('*', secureHeaders())
 
 app.get('/health', (c) => c.json({ status: 'ok' }))
 
 app.all('/3/*', async (c) => {
   const path = c.req.path.replace('/3/', '')
   const url = new URL(c.req.url)
-  url.hostname = new URL(c.env.TMDB_API_BASE_URL).hostname
   url.protocol = 'https'
+  url.hostname = new URL(c.env.TMDB_API_BASE_URL).hostname
   url.pathname = `/3/${path}`
   url.port = ''
+  url.searchParams.set('api_key', c.env.TMDB_API_KEY)
 
   const headers = new Headers(c.req.raw.headers)
-  headers.set('Authorization', `Bearer ${c.env.TMDB_API_BEARER_TOKEN}`)
   headers.set('Accept', 'application/json')
   headers.delete('host')
+  headers.delete('authorization')
   headers.delete('cf-connecting-ip')
   headers.delete('x-forwarded-for')
   headers.delete('x-real-ip')
