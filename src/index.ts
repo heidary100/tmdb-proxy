@@ -6,6 +6,22 @@ type Bindings = {
   TMDB_API_BASE_URL: string
 }
 
+const CACHE_TTL = 60 * 60 // 1 hour
+const cache = caches.default
+
+function buildCacheKey(requestUrl: URL): Request {
+  const url = new URL(requestUrl)
+  url.searchParams.delete('api_key')
+  // Use a synthetic origin so keys don't collide with real TMDB URLs
+  url.protocol = 'https'
+  url.hostname = 'tmdb-proxy-cache'
+  return new Request(url.toString())
+}
+
+function isCacheable(method: string, status: number): boolean {
+  return method === 'GET' && status >= 200 && status < 300
+}
+
 const app = new Hono<{ Bindings: Bindings }>()
 
 app.use('*', cors())
@@ -29,7 +45,15 @@ app.all('/3/*', async (c) => {
   headers.delete('x-forwarded-for')
   headers.delete('x-real-ip')
 
-  const response = await fetch(url.toString(), {
+  // ── Cache check ──────────────────────────────────────────
+  const cacheKey = buildCacheKey(url)
+  let response = await cache.match(cacheKey)
+  if (response) {
+    return new Response(response.body, { ...response })
+  }
+
+  // ── Upstream fetch ───────────────────────────────────────
+  response = await fetch(url.toString(), {
     method: c.req.method,
     headers,
     body: ['GET', 'HEAD'].includes(c.req.method) ? null : c.req.raw.body,
@@ -39,13 +63,21 @@ app.all('/3/*', async (c) => {
   responseHeaders.delete('set-cookie')
   responseHeaders.delete('x-powered-by')
   responseHeaders.delete('server')
-  responseHeaders.set('cache-control', 'public, max-age=300, s-maxage=600')
+  responseHeaders.set('cache-control', `public, max-age=${CACHE_TTL}, s-maxage=${CACHE_TTL}`)
 
-  return new Response(response.body, {
+  const body = await response.bytes()
+  const cached = new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers: responseHeaders,
   })
+
+  // ── Store in cache if eligible ───────────────────────────
+  if (isCacheable(c.req.method, response.status)) {
+    c.executionCtx.waitUntil(cache.put(cacheKey, cached.clone()))
+  }
+
+  return cached
 })
 
 export default app
